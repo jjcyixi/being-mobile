@@ -334,12 +334,18 @@ function msgsOf(scene){
   return ALL.filter(m => (m.scene_id || null) === scene && (m.scene_id || showAutonomous));
 }
 
+// 从别的场景转过来的消息带着「【新消息来自 scene…】」抬头，在气泡里是噪音，剥掉
+function stripRelayPrefix(t){
+  return String(t||'').replace(/^【新消息来自 scene「[^」]*」】\s*/,'');
+}
+
 function msgNode(m){
   const role = m.role === 'user' ? 'user' : (m.scene_id ? 'being' : 'autonomous');
   const who = role === 'user' ? '你' : (role === 'autonomous' ? '· 自主' : 'Heart');
+  const body = role === 'user' ? stripRelayPrefix(m.content) : (m.content||'');
   const w = document.createElement('div');
   w.className = 'msg ' + role;
-  w.innerHTML = `<div class="who">${who} · ${esc(relTime(m.at))}</div><div class="bubble">${md(m.content||'')}</div>`;
+  w.innerHTML = `<div class="who">${who} · ${esc(relTime(m.at))}</div><div class="bubble">${md(body)}</div>`;
   return w;
 }
 
