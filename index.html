@@ -137,6 +137,7 @@ nav button.on{ color:var(--accent); }
 <header>
   <span class="dot" id="hdot"></span>
   <div class="title" id="htitle">会话</div>
+  <button class="btn" id="btnNew">＋</button>
   <button class="btn" id="btnRefresh">⟳</button>
 </header>
 
@@ -253,6 +254,7 @@ function sceneName(id){
   for (const [pfx, nm] of DEFAULT_SCENES) if (id && id.indexOf(pfx) === 0) return nm;
   if (id && id.indexOf('desktop-') === 0) return '桌面会话 · ' + id.slice(8, 16);
   if (id && id.indexOf('loom-') === 0) return 'Loom · ' + id.slice(5);
+  if (id && id.indexOf('mobile-') === 0) return '手机 · ' + id.slice(7);
   if (id && id.indexOf('town-') === 0) return '小镇';
   return id || '未知';
 }
@@ -261,6 +263,7 @@ function sceneIcon(id){
   if (id === 'feishu-jiacheng') return '✉️';
   if (id && id.indexOf('desktop-') === 0) return '💻';
   if (id && id.indexOf('loom-') === 0) return '🧵';
+  if (id && id.indexOf('mobile-') === 0) return '📱';
   return '💬';
 }
 
@@ -268,6 +271,7 @@ let ALL = [];        // 服务端时间线（全部场景）
 let SEQMAX = 0;
 let CUR = null;      // 当前场景 id
 let LIVE = null;     // 正在流式输出 {el, text}
+let RENDERED = new Set();   // 当前视图已渲染的 seq —— 轮询只 append 差量，不整屏重排
 
 async function fetchJson(url){
   const r = await fetch(url, { cache:'no-store' });
@@ -285,7 +289,7 @@ async function pullHistory(after){
     if (!ALL.some(x => x.seq === m.seq)) ALL.push(m);
   }
   ALL.sort((a,b) => (a.seq||0) - (b.seq||0));
-  return msgs.length;
+  return msgs;
 }
 
 // 服务端时间线 → 会话列表
@@ -330,19 +334,44 @@ function msgsOf(scene){
   return ALL.filter(m => (m.scene_id || null) === scene && (m.scene_id || showAutonomous));
 }
 
+function msgNode(m){
+  const role = m.role === 'user' ? 'user' : (m.scene_id ? 'being' : 'autonomous');
+  const who = role === 'user' ? '你' : (role === 'autonomous' ? '· 自主' : 'Heart');
+  const w = document.createElement('div');
+  w.className = 'msg ' + role;
+  w.innerHTML = `<div class="who">${who} · ${esc(relTime(m.at))}</div><div class="bubble">${md(m.content||'')}</div>`;
+  return w;
+}
+
 function renderChat(){
   const el = $('#chatScroll');
   const list = msgsOf(CUR);
+  RENDERED = new Set(list.map(m => m.seq));
   if (!list.length){
     el.innerHTML = '<div class="empty">这个会话还没有消息。<br>发一句试试。</div>';
     return;
   }
-  el.innerHTML = list.map(m => {
-    const role = m.role === 'user' ? 'user' : (m.scene_id ? 'being' : 'autonomous');
-    const who = role === 'user' ? '你' : (role === 'autonomous' ? '· 自主' : 'Heart');
-    return `<div class="msg ${role}"><div class="who">${who} · ${esc(relTime(m.at))}</div><div class="bubble">${md(m.content||'')}</div></div>`;
-  }).join('');
+  el.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  for (const m of list) frag.appendChild(msgNode(m));
+  el.appendChild(frag);
   scrollBottom();
+}
+
+// 轮询差量：只把新到的消息接在末尾，不重排整屏（保住滚动位置与正在看的上下文）
+function appendMsgs(msgs){
+  const el = $('#chatScroll');
+  let added = 0;
+  for (const m of msgs){
+    if ((m.scene_id || null) !== CUR) continue;
+    if (RENDERED.has(m.seq)) continue;
+    if (el.querySelector('.empty')) el.innerHTML = '';
+    el.appendChild(msgNode(m));
+    RENDERED.add(m.seq);
+    added++;
+  }
+  if (added) scrollBottom();
+  return added;
 }
 function scrollBottom(){
   const el = $('#chatScroll');
@@ -365,6 +394,7 @@ async function send(){
   box.value = ''; box.style.height = 'auto';
 
   const el = $('#chatScroll');
+  const startSeq = SEQMAX;
   const wrap = document.createElement('div');
   wrap.className = 'msg user';
   wrap.innerHTML = `<div class="who">你</div><div class="bubble">${md(text)}</div>`;
@@ -398,6 +428,12 @@ async function send(){
     toast('发送失败：' + e.message);
     setDot('bad');
   } finally {
+    // 收尾对齐：流式气泡是临时的，服务端落盘后用真实消息替换（有落盘才替换，否则保留气泡）
+    try {
+      await pullHistory(SEQMAX);
+      const landed = ALL.some(m => (m.scene_id||null) === CUR && m.role !== 'user' && (m.seq||0) > startSeq);
+      if (landed) renderChat();
+    } catch (e){}
     setDot('ok');
     setTimeout(() => startPoll(true), 800);
   }
@@ -472,9 +508,9 @@ function startPoll(force){
     if (pollBusy || document.visibilityState === 'hidden') return;
     pollBusy = true;
     try {
-      const n = await pullHistory(SEQMAX);
-      if (n > 0){
-        if ($('#vChat').classList.contains('active') && !LIVE) renderChat();
+      const msgs = await pullHistory(SEQMAX);
+      if (msgs.length > 0){
+        if ($('#vChat').classList.contains('active') && !LIVE) appendMsgs(msgs);
         else if ($('#vSessions').classList.contains('active')) renderSessions();
         setDot('ok', '已同步');
       } else setDot('ok');
@@ -590,6 +626,16 @@ $('#btnRefresh').onclick = async () => {
     if (view === 'vTown') loadTown(document.querySelector('#townTabs .t.on').dataset.t);
     toast('已刷新');
   } catch (e){ toast('刷新失败：' + e.message); }
+};
+$('#btnNew').onclick = () => {
+  // 手机端新开会话：单独一个 scene，命名带「手机」前缀，电脑端能认出不是自己开的
+  const d = new Date();
+  const p = n => String(n).padStart(2,'0');
+  const id = 'mobile-' + d.getFullYear() + p(d.getMonth()+1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  NAMES[id] = '手机 · ' + p(d.getMonth()+1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  saveNames();
+  openScene(id);
+  toast('新会话已开');
 };
 $('#btnSend').onclick = send;
 $('#input').addEventListener('input', e => {
