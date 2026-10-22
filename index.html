@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Heart">
 <meta name="theme-color" content="#0d1117">
@@ -58,6 +59,7 @@ header .btn{ background:none; border:none; color:var(--text-dim); font-size:20px
 .sess .sub{ font-size:12.5px; color:var(--text-dimmer); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
 .sess .meta{ font-size:11px; color:var(--text-dimmer); flex:0 0 auto; text-align:right; }
 .sess .meta .cnt{ color:var(--text-dim); }
+.sess .meta .rn{ margin-top:2px; color:var(--text-dimmer); font-size:14px; padding:2px 0 2px 6px; }
 /* ---------- chat ---------- */
 #chatScroll{ flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:14px 12px 8px; }
 .msg{ margin-bottom:14px; display:flex; flex-direction:column; max-width:100%; }
@@ -235,10 +237,18 @@ function setDot(cls, title){
 const SCENE_ICON = {
   'feishu-jiacheng': '✉️',
 };
+// 已知会话的默认名（前缀匹配）。用户改名后以本地 NAMES 为准。
+const DEFAULT_SCENES = [
+  ['desktop-5879be7f', '桌面·本机'],
+  ['desktop-0546ffd9', '数据分析'],
+  ['desktop-d163b51a', 'Arco 宣发'],
+  ['desktop-cc22317b', '生活对话'],
+];
 function sceneName(id){
   if (NAMES[id]) return NAMES[id];
   if (id === 'feishu-jiacheng') return '飞书';
-  if (id && id.indexOf('desktop-') === 0) return '桌面会话';
+  for (const [pfx, nm] of DEFAULT_SCENES) if (id && id.indexOf(pfx) === 0) return nm;
+  if (id && id.indexOf('desktop-') === 0) return '桌面会话 · ' + id.slice(8, 16);
   if (id && id.indexOf('loom-') === 0) return 'Loom · ' + id.slice(5);
   if (id && id.indexOf('town-') === 0) return '小镇';
   return id || '未知';
@@ -301,9 +311,15 @@ function renderSessions(){
         <div class="nm">${esc(sceneName(s.id))}${s.id.indexOf('desktop-')===0 ? '<span class="tag">与电脑共用</span>':''}</div>
         <div class="sub">${esc(s.lastText || '（无内容）')}</div>
       </div>
-      <div class="meta"><div class="cnt">${s.count} 条</div><div>${esc(relTime(s.lastAt))}</div></div>
+      <div class="meta"><div class="cnt">${s.count} 条</div><div>${esc(relTime(s.lastAt))}</div><div class="rn" data-id="${esc(s.id)}">✎</div></div>
     </div>`).join('');
   el.querySelectorAll('.sess').forEach(n => n.onclick = () => openScene(n.dataset.id));
+  el.querySelectorAll('.rn').forEach(b => b.onclick = ev => {
+    ev.stopPropagation();
+    const id = b.dataset.id;
+    const nm = prompt('给这个会话起个名字', sceneName(id));
+    if (nm && nm.trim()){ NAMES[id] = nm.trim(); saveNames(); renderSessions(); if (CUR === id) $('#htitle').textContent = nm.trim(); }
+  });
 }
 
 // ============ 对话 ============
