@@ -582,6 +582,16 @@ $('#input').addEventListener('keydown', e => {
 });
 
 // ============ 启动 ============
+// 便捷入口：?api=...&token=... 一次性写入本地（之后可去掉参数）
+(function bootstrapFromQuery(){
+  try {
+    const q = new URL(location.href).searchParams;
+    const a = q.get('api'), t = q.get('token');
+    if (a) { API = a.replace(/\/+$/, ''); localStorage.setItem('hb.api', API); }
+    if (t) { TOKEN = t; localStorage.setItem('hb.token', TOKEN); }
+  } catch (e) {}
+})();
+
 async function boot(){
   if (!API || !TOKEN){ $('#setup').style.display = 'flex'; return; }
   $('#setup').style.display = 'none';
