@@ -653,13 +653,24 @@ $('#input').addEventListener('keydown', e => {
 });
 
 // ============ 启动 ============
-// 便捷入口：?api=...&token=... 一次性写入本地（之后可去掉参数）
+// 便捷入口：一次性写入本地，然后立刻把凭证从地址栏抹掉。
+// 优先认 #api=...&token=...：URL 的 # 之后不会发给服务器（不会进 GitHub 的访问日志、不进 Referer）；
+// ?query 也兼容，但用完同样清空。
 (function bootstrapFromQuery(){
   try {
-    const q = new URL(location.href).searchParams;
-    const a = q.get('api'), t = q.get('token');
+    const read = str => {
+      const o = {};
+      String(str||'').replace(/^[?#]/,'').split('&').forEach(kv => {
+        const i = kv.indexOf('='); if (i < 0) return;
+        o[decodeURIComponent(kv.slice(0,i))] = decodeURIComponent(kv.slice(i+1));
+      });
+      return o;
+    };
+    const h = read(location.hash), q = read(location.search);
+    const a = h.api || q.api, t = h.token || q.token;
     if (a) { API = a.replace(/\/+$/, ''); localStorage.setItem('hb.api', API); }
     if (t) { TOKEN = t; localStorage.setItem('hb.token', TOKEN); }
+    if (a || t) history.replaceState(null, '', location.pathname);
   } catch (e) {}
 })();
 
