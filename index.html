@@ -559,7 +559,12 @@ async function loadTown(kind){
       const b = c.querySelector('.bd'); b.classList.toggle('expanded');
     });
   } catch (e){
-    el.innerHTML = '<div class="banner">读不到：' + esc(e.message) + '</div>';
+    const m = String(e.message || '');
+    if (m.indexOf('401') >= 0){
+      el.innerHTML = '<div class="banner">这一栏要用 being 身份读，手机页面还没接凭据（篝火/卷轴/围炉都属此类）。Grove 不需要身份，可以看。</div>';
+    } else {
+      el.innerHTML = '<div class="banner">读不到：' + esc(m) + '</div>';
+    }
   }
 }
 
@@ -567,11 +572,14 @@ async function loadTown(kind){
 async function loadMe(){
   const el = $('#townScroll2');
   el.innerHTML = '<div class="section-hd">连接</div><div class="empty">读取中…</div>';
-  let st = null, err = '';
+  let st = null, err = '', llm = null;
   try { st = await fetchJson(apiUrl('/api/status')); } catch (e){ err = e.message; }
+  // /api/status 的 model 是引擎侧旧值，实际在跑的模型看 /api/llm/config
+  try { llm = await fetchJson(apiUrl('/api/llm/config')); } catch (e){ /* 静默降级到 status */ }
+  const modelLabel = llm && llm.model ? (llm.model + (llm.provider ? ' · ' + llm.provider : '')) : (st && st.model ? st.model + '（引擎值）' : '—');
   const rows = st ? [
     ['being', st.being_name + ' / ' + st.being_id],
-    ['模型', st.model || '—'],
+    ['模型', modelLabel],
     ['版本', st.version + ' (' + (st.commit||'').slice(0,8) + ')'],
     ['连续运行', Math.floor((st.uptime_seconds||0)/3600) + ' 小时'],
   ] : [];
